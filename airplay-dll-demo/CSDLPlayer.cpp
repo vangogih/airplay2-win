@@ -83,16 +83,18 @@ void CSDLPlayer::loopEvents()
 
 	BOOL bEndLoop = FALSE;
 	/* Loop waiting for ESC+Mouse_Button */
-	while (SDL_WaitEvent(&event) >= 0) {
+	while (SDL_WaitEvent(&event) >= 0) {		
 		switch (event.type) {
-		case SDL_USEREVENT: {
-			if (event.user.code == VIDEO_SIZE_CHANGED_CODE) {
-				unsigned int width = (unsigned int)event.user.data1;
-				unsigned int height = (unsigned int)event.user.data2;
-				if (width != m_rect.w || height != m_rect.h || m_yuv == NULL) {
-					unInitVideo();
-					initVideo(width, height);
-				}
+		case SDL_VIDEORESIZE: {
+			unsigned int wSource = m_rect.w;
+			unsigned int wDst = event.resize.w;
+			unsigned int hSource = m_rect.h;
+			unsigned int hDst = event.resize.h;
+
+			if (wDst != wSource || hDst != hSource)
+			{
+				unInitVideo();
+				initVideo(wDst, hDst);
 			}
 			break;
 		}
@@ -153,27 +155,8 @@ void CSDLPlayer::loopEvents()
 	}
 }
 
-void CSDLPlayer::outputVideo(SFgVideoFrame* data) 
-{
+void CSDLPlayer::outputVideo(SFgVideoFrame* data) {
 	if (data->width == 0 || data->height == 0) {
-		return;
-	}
-
-	if (data->width != m_rect.w || data->height != m_rect.h) {
-		{
-			CAutoLock oLock(m_mutexVideo, "unInitVideo");
-			if (NULL != m_yuv) {
-				SDL_FreeYUVOverlay(m_yuv);
-				m_yuv = NULL;
-			}
-		}
-		m_evtVideoSizeChange.type = SDL_USEREVENT;
-		m_evtVideoSizeChange.user.type = SDL_USEREVENT;
-		m_evtVideoSizeChange.user.code = VIDEO_SIZE_CHANGED_CODE;
-		m_evtVideoSizeChange.user.data1 = (void*)data->width;
-		m_evtVideoSizeChange.user.data2 = (void*)data->height;
-
-		SDL_PushEvent(&m_evtVideoSizeChange);
 		return;
 	}
 
@@ -184,17 +167,33 @@ void CSDLPlayer::outputVideo(SFgVideoFrame* data)
 
 	SDL_LockYUVOverlay(m_yuv);
 
-	for (size_t i = 0; i < data->height; i++)
-	{
-		if (i >= m_yuv->h) {
-			break;
+	// Calculate scaling factors
+	double scaleX = static_cast<double>(m_rect.w) / data->width;
+	double scaleY = static_cast<double>(m_rect.h) / data->height;
+
+	// Rescale YUV planes
+	for (int y = 0; y < m_rect.h; ++y) {
+		int srcY = static_cast<int>(y / scaleY);
+		if (srcY >= data->height) break;
+
+		for (int x = 0; x < m_rect.w; ++x) {
+			int srcX = static_cast<int>(x / scaleX);
+			if (srcX >= data->width) break;
+
+			m_yuv->pixels[0][y * m_yuv->pitches[0] + x] = data->data[srcY * data->pitch[0] + srcX];
 		}
-		memcpy(m_yuv->pixels[0] + i * m_yuv->pitches[0], data->data + i * data->pitch[0], min(m_yuv->pitches[0], data->pitch[0]));
-		if (i % 2 == 0) {
-			memcpy(m_yuv->pixels[1] + (i >> 1)* m_yuv->pitches[1],
-				data->data + data->dataLen[0] + (i >> 1)* data->pitch[1], min(m_yuv->pitches[1], data->pitch[1]));
-			memcpy(m_yuv->pixels[2] + (i >> 1)* m_yuv->pitches[2],
-				data->data + data->dataLen[0] + data->dataLen[1] + (i >> 1)* data->pitch[2], min(m_yuv->pitches[2], data->pitch[2]));
+	}
+
+	for (int y = 0; y < m_rect.h / 2; ++y) {
+		int srcY = static_cast<int>(y / scaleY);
+		if (srcY >= data->height / 2) break;
+
+		for (int x = 0; x < m_rect.w / 2; ++x) {
+			int srcX = static_cast<int>(x / scaleX);
+			if (srcX >= data->width / 2) break;
+
+			m_yuv->pixels[1][y * m_yuv->pitches[1] + x] = data->data[data->dataLen[0] + srcY * data->pitch[1] + srcX];
+			m_yuv->pixels[2][y * m_yuv->pitches[2] + x] = data->data[data->dataLen[0] + data->dataLen[1] + srcY * data->pitch[2] + srcX];
 		}
 	}
 
@@ -202,8 +201,6 @@ void CSDLPlayer::outputVideo(SFgVideoFrame* data)
 
 	m_rect.x = 0;
 	m_rect.y = 0;
-	m_rect.w = data->width;
-	m_rect.h = data->height;
 
 	SDL_DisplayYUVOverlay(m_yuv, &m_rect);
 }
@@ -235,24 +232,33 @@ void CSDLPlayer::outputAudio(SFgAudioFrame* data)
 	}
 }
 
-void CSDLPlayer::initVideo(int width, int height)
-{
-	// 0x115
-	m_surface = SDL_SetVideoMode(width, height, 0, SDL_SWSURFACE);
+void CSDLPlayer::initVideo(int width, int height) {
+	// Set video mode with specified width and height
+	m_surface = SDL_SetVideoMode(width, height, 0, SDL_SWSURFACE | SDL_RESIZABLE);
 	SDL_WM_SetCaption("AirPlay Demo [s - start server, q - stop server]", NULL);
 
 	{
 		CAutoLock oLock(m_mutexVideo, "initVideo");
+
+		// Create a YUV overlay with the specified width and height
 		m_yuv = SDL_CreateYUVOverlay(width, height, SDL_IYUV_OVERLAY, m_surface);
 
-		memset(m_yuv->pixels[0], 0, m_yuv->pitches[0] * m_yuv->h);
-		memset(m_yuv->pixels[1], 128, m_yuv->pitches[1] * m_yuv->h >> 1);
-		memset(m_yuv->pixels[2], 128, m_yuv->pitches[2] * m_yuv->h >> 1);
+		if (m_yuv) {
+			// Initialize Y plane (Y component of the YUV image)
+			memset(m_yuv->pixels[0], 0, m_yuv->pitches[0] * m_yuv->h);
+			// Initialize U plane (U component of the YUV image) with 128 (neutral color)
+			memset(m_yuv->pixels[1], 128, m_yuv->pitches[1] * (m_yuv->h >> 1));
+			// Initialize V plane (V component of the YUV image) with 128 (neutral color)
+			memset(m_yuv->pixels[2], 128, m_yuv->pitches[2] * (m_yuv->h >> 1));
+		}
+
+		// Set the destination rectangle size to match the input dimensions
 		m_rect.x = 0;
 		m_rect.y = 0;
 		m_rect.w = width;
 		m_rect.h = height;
 
+		// Display the initialized YUV overlay
 		SDL_DisplayYUVOverlay(m_yuv, &m_rect);
 	}
 }
