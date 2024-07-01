@@ -170,30 +170,84 @@ void CSDLPlayer::outputVideo(SFgVideoFrame* data) {
 	// Calculate scaling factors
 	double scaleX = static_cast<double>(m_rect.w) / data->width;
 	double scaleY = static_cast<double>(m_rect.h) / data->height;
+	
+	auto dp0 = data->pitch[0];
+	auto dl0 = data->dataLen[0];
+	auto dl1 = data->dataLen[1];
+	auto dp1 = data->pitch[1];
+	auto dp2 = data->pitch[2];
 
-	// Rescale YUV planes
+	// Rescale YUV planes with bilinear interpolation
 	for (int y = 0; y < m_rect.h; ++y) {
-		int srcY = static_cast<int>(y / scaleY);
-		if (srcY >= data->height) break;
+		double srcY = y / scaleY;
+		int srcY1 = static_cast<int>(srcY);
+		int srcY2 = min(srcY1 + 1, data->height - 1);
+		double tY = srcY - srcY1;
 
 		for (int x = 0; x < m_rect.w; ++x) {
-			int srcX = static_cast<int>(x / scaleX);
-			if (srcX >= data->width) break;
+			double srcX = x / scaleX;
+			int srcX1 = static_cast<int>(srcX);
+			int srcX2 = min(srcX1 + 1, data->width - 1);
+			double tX = srcX - srcX1;
 
-			m_yuv->pixels[0][y * m_yuv->pitches[0] + x] = data->data[srcY * data->pitch[0] + srcX];
+			// Bilinear interpolation for Y plane
+			Uint8 value1 = data->data[srcY1 * dp0 + srcX1];
+			Uint8 value2 = data->data[srcY1 * dp0 + srcX2];
+			Uint8 value3 = data->data[srcY2 * dp0 + srcX1];
+			Uint8 value4 = data->data[srcY2 * dp0 + srcX2];
+
+			Uint8 interpolatedValueY = static_cast<Uint8>(
+				(1 - tX) * (1 - tY) * value1 +
+				tX * (1 - tY) * value2 +
+				(1 - tX) * tY * value3 +
+				tX * tY * value4
+				);
+
+			m_yuv->pixels[0][y * m_yuv->pitches[0] + x] = interpolatedValueY;
 		}
 	}
 
 	for (int y = 0; y < m_rect.h / 2; ++y) {
-		int srcY = static_cast<int>(y / scaleY);
-		if (srcY >= data->height / 2) break;
+		double srcY = y / scaleY;
+		int srcY1 = static_cast<int>(srcY);
+		int srcY2 = min(srcY1 + 1, data->height / 2 - 1);
+		double tY = srcY - srcY1;
 
 		for (int x = 0; x < m_rect.w / 2; ++x) {
-			int srcX = static_cast<int>(x / scaleX);
-			if (srcX >= data->width / 2) break;
+			double srcX = x / scaleX;
+			int srcX1 = static_cast<int>(srcX);
+			int srcX2 = min(srcX1 + 1, data->width / 2 - 1);
+			double tX = srcX - srcX1;
 
-			m_yuv->pixels[1][y * m_yuv->pitches[1] + x] = data->data[data->dataLen[0] + srcY * data->pitch[1] + srcX];
-			m_yuv->pixels[2][y * m_yuv->pitches[2] + x] = data->data[data->dataLen[0] + data->dataLen[1] + srcY * data->pitch[2] + srcX];
+			// Bilinear interpolation for U plane
+			Uint8 value1 = data->data[dl0 + srcY1 * dp1 + srcX1];
+			Uint8 value2 = data->data[dl0 + srcY1 * dp1 + srcX2];
+			Uint8 value3 = data->data[dl0 + srcY2 * dp1 + srcX1];
+			Uint8 value4 = data->data[dl0 + srcY2 * dp1 + srcX2];
+
+			Uint8 interpolatedValueU = static_cast<Uint8>(
+				(1 - tX) * (1 - tY) * value1 +
+				tX * (1 - tY) * value2 +
+				(1 - tX) * tY * value3 +
+				tX * tY * value4
+				);
+
+			m_yuv->pixels[1][y * m_yuv->pitches[1] + x] = interpolatedValueU;
+
+			// Bilinear interpolation for V plane
+			value1 = data->data[dl0 + dl1 + srcY1 * dp2 + srcX1];
+			value2 = data->data[dl0 + dl1 + srcY1 * dp2 + srcX2];
+			value3 = data->data[dl0 + dl1 + srcY2 * dp2 + srcX1];
+			value4 = data->data[dl0 + dl1 + srcY2 * dp2 + srcX2];
+
+			Uint8 interpolatedValueV = static_cast<Uint8>(
+				(1 - tX) * (1 - tY) * value1 +
+				tX * (1 - tY) * value2 +
+				(1 - tX) * tY * value3 +
+				tX * tY * value4
+				);
+
+			m_yuv->pixels[2][y * m_yuv->pitches[2] + x] = interpolatedValueV;
 		}
 	}
 
