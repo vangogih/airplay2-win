@@ -5,9 +5,14 @@ Migrate [AirplayServer](https://github.com/KqSMea8/AirplayServer) and [dnssd](ht
 
 ## Fork features
 - Support window rescaling. Screencast perfectly fits to the window.
-- Biliniar rendering filter. Less pixilization on makin upscale.
+- Bilinear rendering filter. Less pixelation on making upscale.
 
-Also tested cubic interpolation but it causes too much derformace degration.
+Also tested cubic interpolation but it causes too much performance degradation.
+
+## Known issues
+- After resizing the window with sharing screen UV layers can be drawn with wrong scale.
+To fix that try to change window size from bigger to smaller.
+- Also if you will get total black screen after resizing, just click on your device screen
 
 ## Build
 
@@ -22,11 +27,4 @@ Also tested cubic interpolation but it causes too much derformace degration.
 - [dnssd](https://github.com/jevinskie/mDNSResponder)
 - [AirplayServer](https://github.com/KqSMea8/AirplayServer)
 - [xindawn-windows-airplay-mirroring-sdk](https://github.com/xindawndev/xindawn-windows-airplay-mirroring-sdk)
-
-
-## 常见问题
-
-- 可以被iOS设备发现，但无法连接。
-
-  确保iOS和Windows处于同一个Wi-Fi，同一个网段下。如果Windows是在虚拟机中运行，确保使用的是桥接网络，而不是共享网络。
   
