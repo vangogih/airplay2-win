@@ -3,6 +3,12 @@ Airplay2 for windows.
 
 Migrate [AirplayServer](https://github.com/KqSMea8/AirplayServer) and [dnssd](https://github.com/jevinskie/mDNSResponder) to Windows Platform.
 
+## Fork features
+- Support window rescaling. Screencast perfectly fits to the window.
+- Biliniar rendering filter. Less pixilization on makin upscale.
+
+Also tested cubic interpolation but it causes too much derformace degration.
+
 ## Build
 
 - Open `airplay2-win.sln` in Visual Studio 2019.
